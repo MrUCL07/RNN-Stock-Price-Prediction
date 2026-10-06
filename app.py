@@ -4,8 +4,6 @@ import numpy as np
 import pandas as pd
 import joblib
 
-from tensorflow.keras.models import load_model
-
 
 # ============================================================
 # FLASK APP
@@ -15,15 +13,17 @@ app = Flask(__name__)
 
 
 # ============================================================
-# CONFIGURATION
+# PATHS
 # ============================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
 
-MODEL_PATH = os.path.join(
+WEIGHTS_PATH = os.path.join(
     BASE_DIR,
     "models",
-    "stock_rnn.keras"
+    "rnn_weights.npz"
 )
 
 SCALER_PATH = os.path.join(
@@ -38,30 +38,42 @@ DATA_PATH = os.path.join(
     "RELIANCE.csv"
 )
 
-SEQUENCE_LENGTH = 60
 
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+SEQUENCE_LENGTH = 60
 TICKER = "RELIANCE.NS"
 
 
 # ============================================================
-# LOAD MODEL
+# LOAD NUMPY WEIGHTS
 # ============================================================
 
 print("\n========================================")
-print("Loading RNN model...")
+print("Loading NumPy RNN weights...")
 print("========================================")
 
 try:
-    model = load_model(MODEL_PATH)
 
-    print("RNN model loaded successfully.")
+    weights = np.load(
+        WEIGHTS_PATH
+    )
+
+    print(
+        "NumPy weights loaded successfully."
+    )
 
 except Exception as e:
 
-    print("ERROR loading model:")
+    print(
+        "ERROR loading NumPy weights:"
+    )
+
     print(e)
 
-    model = None
+    weights = None
 
 
 # ============================================================
@@ -73,13 +85,21 @@ print("Loading scaler...")
 print("========================================")
 
 try:
-    scaler = joblib.load(SCALER_PATH)
 
-    print("Scaler loaded successfully.")
+    scaler = joblib.load(
+        SCALER_PATH
+    )
+
+    print(
+        "Scaler loaded successfully."
+    )
 
 except Exception as e:
 
-    print("ERROR loading scaler:")
+    print(
+        "ERROR loading scaler:"
+    )
+
     print(e)
 
     scaler = None
@@ -101,32 +121,36 @@ def get_stock_data():
             f"Stock data file not found: {DATA_PATH}"
         )
 
-    # Read CSV
     data = pd.read_csv(
         DATA_PATH,
         skiprows=[1, 2]
     )
 
-    print("CSV loaded successfully.")
-    print("Total rows:", len(data))
+    print(
+        "CSV loaded successfully."
+    )
 
-    # Show columns
-    print("Columns:", list(data.columns))
+    print(
+        "Total rows:",
+        len(data)
+    )
 
-    # Find Close column
+    print(
+        "Columns:",
+        list(data.columns)
+    )
+
     if "Close" not in data.columns:
 
         raise ValueError(
-            "Close column was not found in RELIANCE.csv"
+            "Close column was not found."
         )
 
-    # Convert Close column to numeric
     close_prices = pd.to_numeric(
         data["Close"],
         errors="coerce"
     )
 
-    # Remove missing values
     close_prices = close_prices.dropna()
 
     print(
@@ -137,10 +161,152 @@ def get_stock_data():
     if len(close_prices) < SEQUENCE_LENGTH:
 
         raise ValueError(
-            "Not enough stock data for prediction."
+            "Not enough stock data."
         )
 
-    return close_prices.values.reshape(-1, 1)
+    return close_prices.values.reshape(
+        -1,
+        1
+    )
+
+
+# ============================================================
+# NUMPY RNN
+# ============================================================
+
+def numpy_rnn(
+    x,
+    kernel,
+    recurrent_kernel,
+    bias
+):
+
+    hidden_size = recurrent_kernel.shape[0]
+
+    h = np.zeros(
+        hidden_size,
+        dtype=np.float32
+    )
+
+    for t in range(x.shape[0]):
+
+        x_t = x[t]
+
+        h = np.tanh(
+            np.dot(
+                x_t,
+                kernel
+            )
+            +
+            np.dot(
+                h,
+                recurrent_kernel
+            )
+            +
+            bias
+        )
+
+    return h
+
+
+# ============================================================
+# NUMPY MODEL
+# ============================================================
+
+def predict_numpy(x):
+
+    # --------------------------------------------------------
+    # First SimpleRNN
+    # --------------------------------------------------------
+
+    rnn1_kernel = weights[
+        "rnn1_kernel"
+    ]
+
+    rnn1_recurrent = weights[
+        "rnn1_recurrent"
+    ]
+
+    rnn1_bias = weights[
+        "rnn1_bias"
+    ]
+
+    sequence = []
+
+    h = np.zeros(
+        rnn1_recurrent.shape[0],
+        dtype=np.float32
+    )
+
+    for t in range(x.shape[0]):
+
+        x_t = x[t]
+
+        h = np.tanh(
+            np.dot(
+                x_t,
+                rnn1_kernel
+            )
+            +
+            np.dot(
+                h,
+                rnn1_recurrent
+            )
+            +
+            rnn1_bias
+        )
+
+        sequence.append(
+            h.copy()
+        )
+
+    sequence = np.array(
+        sequence,
+        dtype=np.float32
+    )
+
+
+    # --------------------------------------------------------
+    # Second SimpleRNN
+    # --------------------------------------------------------
+
+    rnn2_output = numpy_rnn(
+        sequence,
+        weights["rnn2_kernel"],
+        weights["rnn2_recurrent"],
+        weights["rnn2_bias"]
+    )
+
+
+    # --------------------------------------------------------
+    # Dense layer 1
+    # --------------------------------------------------------
+
+    dense1_output = (
+        np.dot(
+            rnn2_output,
+            weights["dense1_kernel"]
+        )
+        +
+        weights["dense1_bias"]
+    )
+
+
+    # --------------------------------------------------------
+    # Dense layer 2
+    # --------------------------------------------------------
+
+    dense2_output = (
+        np.dot(
+            dense1_output,
+            weights["dense2_kernel"]
+        )
+        +
+        weights["dense2_bias"]
+    )
+
+
+    return dense2_output
 
 
 # ============================================================
@@ -150,7 +316,9 @@ def get_stock_data():
 @app.route("/")
 def home():
 
-    return render_template("index.html")
+    return render_template(
+        "index.html"
+    )
 
 
 # ============================================================
@@ -167,14 +335,14 @@ def predict():
     try:
 
         # ----------------------------------------------------
-        # Check model
+        # Check weights
         # ----------------------------------------------------
 
-        if model is None:
+        if weights is None:
 
             return jsonify({
                 "success": False,
-                "error": "RNN model could not be loaded."
+                "error": "RNN weights could not be loaded."
             }), 500
 
 
@@ -191,7 +359,7 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Load local stock data
+        # Load stock data
         # ----------------------------------------------------
 
         prices = get_stock_data()
@@ -220,7 +388,7 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Get last 60 trading days
+        # Last 60 trading days
         # ----------------------------------------------------
 
         last_60_days = scaled_prices[
@@ -229,18 +397,15 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Reshape for RNN
+        # RNN input
         #
         # Shape:
-        # (1, 60, 1)
+        # (60, 1)
         # ----------------------------------------------------
 
-        X = last_60_days.reshape(
-            1,
-            SEQUENCE_LENGTH,
-            1
+        X = last_60_days.astype(
+            np.float32
         )
-
 
         print(
             "Input shape:",
@@ -249,21 +414,33 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Make prediction
+        # NumPy prediction
         # ----------------------------------------------------
 
         print(
-            "Running RNN prediction..."
+            "Running NumPy RNN prediction..."
         )
 
-        prediction = model.predict(
-            X,
-            verbose=0
+        prediction = predict_numpy(
+            X
         )
 
 
         # ----------------------------------------------------
-        # Convert prediction back to price
+        # Reshape prediction
+        # ----------------------------------------------------
+
+        prediction = np.array(
+            prediction,
+            dtype=np.float32
+        ).reshape(
+            1,
+            1
+        )
+
+
+        # ----------------------------------------------------
+        # Convert back to original price
         # ----------------------------------------------------
 
         predicted_price = scaler.inverse_transform(
@@ -281,7 +458,7 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Calculate difference
+        # Price difference
         # ----------------------------------------------------
 
         price_difference = (
@@ -291,7 +468,7 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Calculate percentage change
+        # Percentage change
         # ----------------------------------------------------
 
         percentage_change = (
@@ -301,7 +478,7 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Determine direction
+        # Direction
         # ----------------------------------------------------
 
         if percentage_change > 0.1:
@@ -324,7 +501,7 @@ def predict():
 
 
         # ----------------------------------------------------
-        # Return JSON
+        # Response
         # ----------------------------------------------------
 
         response = {
@@ -356,7 +533,9 @@ def predict():
                 ),
 
                 "direction": direction
+
             }
+
         }
 
 
@@ -365,7 +544,9 @@ def predict():
         )
 
 
-        return jsonify(response)
+        return jsonify(
+            response
+        )
 
 
     except Exception as e:
@@ -374,7 +555,9 @@ def predict():
         print("PREDICTION ERROR")
         print("========================================")
 
-        print(str(e))
+        print(
+            str(e)
+        )
 
         return jsonify({
 
