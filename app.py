@@ -1,169 +1,205 @@
 from flask import Flask, render_template, jsonify
+import os
 import numpy as np
 import pandas as pd
 import joblib
-import os
 
 from tensorflow.keras.models import load_model
 
 
-# ======================================
-# Flask App
-# ======================================
+# ============================================================
+# FLASK APP
+# ============================================================
 
 app = Flask(__name__)
 
 
-# ======================================
-# Configuration
-# ======================================
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-TICKER = "RELIANCE.NS"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_PATH = os.path.join(
+    BASE_DIR,
+    "models",
+    "stock_rnn.keras"
+)
+
+SCALER_PATH = os.path.join(
+    BASE_DIR,
+    "models",
+    "scaler.pkl"
+)
+
+DATA_PATH = os.path.join(
+    BASE_DIR,
+    "data",
+    "RELIANCE.csv"
+)
+
 SEQUENCE_LENGTH = 60
 
-MODEL_PATH = "models/stock_rnn.keras"
-SCALER_PATH = "models/scaler.pkl"
-LOCAL_DATA_PATH = "data/RELIANCE.csv"
+TICKER = "RELIANCE.NS"
 
 
-# ======================================
-# Load RNN Model
-# ======================================
+# ============================================================
+# LOAD MODEL
+# ============================================================
 
-print("\nLoading RNN model...")
+print("\n========================================")
+print("Loading RNN model...")
+print("========================================")
 
-model = load_model(MODEL_PATH)
+try:
+    model = load_model(MODEL_PATH)
 
-print("RNN model loaded successfully.")
+    print("RNN model loaded successfully.")
 
+except Exception as e:
 
-# ======================================
-# Load Scaler
-# ======================================
+    print("ERROR loading model:")
+    print(e)
 
-print("\nLoading scaler...")
-
-scaler = joblib.load(SCALER_PATH)
-
-print("Scaler loaded successfully.")
-
-
-# ======================================
-# Home Page
-# ======================================
-
-@app.route("/")
-def home():
-    return render_template("index.html")
+    model = None
 
 
-# ======================================
-# Load Local Stock Data
-# ======================================
+# ============================================================
+# LOAD SCALER
+# ============================================================
+
+print("\n========================================")
+print("Loading scaler...")
+print("========================================")
+
+try:
+    scaler = joblib.load(SCALER_PATH)
+
+    print("Scaler loaded successfully.")
+
+except Exception as e:
+
+    print("ERROR loading scaler:")
+    print(e)
+
+    scaler = None
+
+
+# ============================================================
+# LOAD LOCAL STOCK DATA
+# ============================================================
 
 def get_stock_data():
 
-    print("\n======================================")
+    print("\n========================================")
     print("Loading local stock data...")
-    print("======================================")
+    print("========================================")
 
-    if not os.path.exists(LOCAL_DATA_PATH):
+    if not os.path.exists(DATA_PATH):
 
         raise FileNotFoundError(
-            "Local stock data file was not found."
+            f"Stock data file not found: {DATA_PATH}"
         )
 
-    # Load CSV
+    # Read CSV
     data = pd.read_csv(
-        LOCAL_DATA_PATH,
+        DATA_PATH,
         skiprows=[1, 2]
     )
 
-    print("Local CSV loaded successfully.")
-
+    print("CSV loaded successfully.")
     print("Total rows:", len(data))
 
-    return data
+    # Show columns
+    print("Columns:", list(data.columns))
+
+    # Find Close column
+    if "Close" not in data.columns:
+
+        raise ValueError(
+            "Close column was not found in RELIANCE.csv"
+        )
+
+    # Convert Close column to numeric
+    close_prices = pd.to_numeric(
+        data["Close"],
+        errors="coerce"
+    )
+
+    # Remove missing values
+    close_prices = close_prices.dropna()
+
+    print(
+        "Valid closing prices:",
+        len(close_prices)
+    )
+
+    if len(close_prices) < SEQUENCE_LENGTH:
+
+        raise ValueError(
+            "Not enough stock data for prediction."
+        )
+
+    return close_prices.values.reshape(-1, 1)
 
 
-# ======================================
-# Prediction API
-# ======================================
+# ============================================================
+# HOME PAGE
+# ============================================================
+
+@app.route("/")
+def home():
+
+    return render_template("index.html")
+
+
+# ============================================================
+# PREDICTION API
+# ============================================================
 
 @app.route("/predict")
 def predict():
 
+    print("\n========================================")
+    print("PREDICTION REQUEST")
+    print("========================================")
+
     try:
 
-        print("\n======================================")
-        print("Starting stock prediction...")
-        print("======================================")
+        # ----------------------------------------------------
+        # Check model
+        # ----------------------------------------------------
 
-
-        # --------------------------------
-        # 1. Load stock data
-        # --------------------------------
-
-        data = get_stock_data()
-
-
-        if data.empty:
+        if model is None:
 
             return jsonify({
                 "success": False,
-                "error": "No stock data available."
+                "error": "RNN model could not be loaded."
             }), 500
 
 
-        # --------------------------------
-        # 2. Get Close price
-        # --------------------------------
+        # ----------------------------------------------------
+        # Check scaler
+        # ----------------------------------------------------
 
-        prices = data["Close"]
-
-
-        # Handle possible DataFrame
-        if isinstance(prices, pd.DataFrame):
-
-            prices = prices.iloc[:, 0]
-
-
-        # Convert to numeric
-        prices = pd.to_numeric(
-            prices,
-            errors="coerce"
-        )
-
-
-        # Remove missing values
-        prices = prices.dropna()
-
-
-        # Convert to NumPy
-        prices = prices.values.reshape(
-            -1,
-            1
-        )
-
-
-        # --------------------------------
-        # 3. Check data length
-        # --------------------------------
-
-        if len(prices) < SEQUENCE_LENGTH:
+        if scaler is None:
 
             return jsonify({
                 "success": False,
-                "error": (
-                    "Not enough stock data "
-                    "for prediction."
-                )
+                "error": "Scaler could not be loaded."
             }), 500
 
 
-        # --------------------------------
-        # 4. Latest stock price
-        # --------------------------------
+        # ----------------------------------------------------
+        # Load local stock data
+        # ----------------------------------------------------
+
+        prices = get_stock_data()
+
+
+        # ----------------------------------------------------
+        # Latest price
+        # ----------------------------------------------------
 
         latest_price = float(
             prices[-1][0]
@@ -174,27 +210,30 @@ def predict():
         )
 
 
-        # --------------------------------
-        # 5. Scale prices
-        # --------------------------------
+        # ----------------------------------------------------
+        # Scale prices
+        # ----------------------------------------------------
 
         scaled_prices = scaler.transform(
             prices
         )
 
 
-        # --------------------------------
-        # 6. Select last 60 days
-        # --------------------------------
+        # ----------------------------------------------------
+        # Get last 60 trading days
+        # ----------------------------------------------------
 
         last_60_days = scaled_prices[
             -SEQUENCE_LENGTH:
         ]
 
 
-        # --------------------------------
-        # 7. Reshape for RNN
-        # --------------------------------
+        # ----------------------------------------------------
+        # Reshape for RNN
+        #
+        # Shape:
+        # (1, 60, 1)
+        # ----------------------------------------------------
 
         X = last_60_days.reshape(
             1,
@@ -209,9 +248,9 @@ def predict():
         )
 
 
-        # --------------------------------
-        # 8. Run RNN prediction
-        # --------------------------------
+        # ----------------------------------------------------
+        # Make prediction
+        # ----------------------------------------------------
 
         print(
             "Running RNN prediction..."
@@ -223,17 +262,13 @@ def predict():
         )
 
 
-        # --------------------------------
-        # 9. Convert prediction
-        #    back to original price
-        # --------------------------------
+        # ----------------------------------------------------
+        # Convert prediction back to price
+        # ----------------------------------------------------
 
-        predicted_price = (
-            scaler.inverse_transform(
-                prediction
-            )
+        predicted_price = scaler.inverse_transform(
+            prediction
         )
-
 
         predicted_price = float(
             predicted_price[0][0]
@@ -241,34 +276,33 @@ def predict():
 
 
         print(
-            f"Predicted price: "
-            f"₹{predicted_price:.2f}"
+            f"Predicted price: ₹{predicted_price:.2f}"
         )
 
 
-        # --------------------------------
-        # 10. Calculate price difference
-        # --------------------------------
+        # ----------------------------------------------------
+        # Calculate difference
+        # ----------------------------------------------------
 
         price_difference = (
-            predicted_price -
-            latest_price
+            predicted_price
+            - latest_price
         )
 
 
-        # --------------------------------
-        # 11. Calculate percentage change
-        # --------------------------------
+        # ----------------------------------------------------
+        # Calculate percentage change
+        # ----------------------------------------------------
 
         percentage_change = (
-            price_difference /
-            latest_price
+            price_difference
+            / latest_price
         ) * 100
 
 
-        # --------------------------------
-        # 12. Determine direction
-        # --------------------------------
+        # ----------------------------------------------------
+        # Determine direction
+        # ----------------------------------------------------
 
         if percentage_change > 0.1:
 
@@ -289,11 +323,11 @@ def predict():
         )
 
 
-        # --------------------------------
-        # 13. Return JSON response
-        # --------------------------------
+        # ----------------------------------------------------
+        # Return JSON
+        # ----------------------------------------------------
 
-        return jsonify({
+        response = {
 
             "success": True,
 
@@ -323,22 +357,24 @@ def predict():
 
                 "direction": direction
             }
+        }
 
-        })
+
+        print(
+            "Prediction completed successfully."
+        )
 
 
-    # ==================================
-    # Error Handling
-    # ==================================
+        return jsonify(response)
+
 
     except Exception as e:
 
-        print("\n======================================")
+        print("\n========================================")
         print("PREDICTION ERROR")
-        print("======================================")
+        print("========================================")
 
         print(str(e))
-
 
         return jsonify({
 
@@ -349,9 +385,9 @@ def predict():
         }), 500
 
 
-# ======================================
-# Run Flask App
-# ======================================
+# ============================================================
+# RUN FLASK
+# ============================================================
 
 if __name__ == "__main__":
 
@@ -362,22 +398,16 @@ if __name__ == "__main__":
         )
     )
 
+    print("\n========================================")
+    print("RNN STOCK PREDICTION WEB APP")
+    print("========================================")
 
-    print("\n")
-    print("==============================================")
-    print("       RNN STOCK PREDICTION WEB APP")
-    print("==============================================")
-
-
-    print("\nStarting Flask server...")
-
+    print(
+        f"Starting server on port {port}..."
+    )
 
     app.run(
-
         host="0.0.0.0",
-
         port=port,
-
         debug=False
-
     )
