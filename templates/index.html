@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>RNN Stock Predictor</title>
+
+
+<style>
+
+/* =========================================================
+   GENERAL
+========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+
+body {
+
+    margin: 0;
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+
+    background:
+        #0b1220;
+
+    color:
+        white;
+
+    min-height: 100vh;
+}
+
+
+.container {
+
+    width: 90%;
+
+    max-width: 1200px;
+
+    margin: auto;
+
+    padding: 40px 0;
+
+}
+
+
+/* =========================================================
+   HEADER
+========================================================= */
+
+header {
+
+    text-align: center;
+
+    margin-bottom: 40px;
+
+}
+
+
+header h1 {
+
+    font-size: 42px;
+
+    margin-bottom: 10px;
+
+}
+
+
+header p {
+
+    color: #9ca3af;
+
+    font-size: 17px;
+
+}
+
+
+.status {
+
+    display: inline-block;
+
+    margin-top: 15px;
+
+    padding: 8px 16px;
+
+    background: #16213a;
+
+    border-radius: 20px;
+
+    color: #4ade80;
+
+    font-size: 13px;
+
+}
+
+
+/* =========================================================
+   CARDS
+========================================================= */
+
+.cards {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(4, 1fr);
+
+    gap: 20px;
+
+    margin-bottom: 30px;
+
+}
+
+
+.card {
+
+    background:
+        #111a2e;
+
+    border:
+        1px solid #24304a;
+
+    border-radius:
+        18px;
+
+    padding:
+        25px;
+
+}
+
+
+.card-title {
+
+    color:
+        #9ca3af;
+
+    font-size:
+        13px;
+
+    margin-bottom:
+        12px;
+
+}
+
+
+.card-value {
+
+    font-size:
+        28px;
+
+    font-weight:
+        bold;
+
+}
+
+
+.card-note {
+
+    margin-top:
+        8px;
+
+    color:
+        #64748b;
+
+    font-size:
+        12px;
+
+}
+
+
+.negative {
+
+    color:
+        #ef4444;
+
+}
+
+
+.positive {
+
+    color:
+        #4ade80;
+
+}
+
+
+/* =========================================================
+   MAIN AREA
+========================================================= */
+
+.main {
+
+    display:
+        grid;
+
+    grid-template-columns:
+        2fr 1fr;
+
+    gap:
+        25px;
+
+}
+
+
+.panel {
+
+    background:
+        #111a2e;
+
+    border:
+        1px solid #24304a;
+
+    border-radius:
+        18px;
+
+    padding:
+        25px;
+
+}
+
+
+.panel h2 {
+
+    margin-top:
+        0;
+
+    margin-bottom:
+        20px;
+
+}
+
+
+/* =========================================================
+   CHART
+========================================================= */
+
+.chart {
+
+    height:
+        350px;
+
+    background:
+        #0d1628;
+
+    border-radius:
+        15px;
+
+    padding:
+        20px;
+
+}
+
+
+.chart svg {
+
+    width:
+        100%;
+
+    height:
+        100%;
+
+}
+
+
+.axis {
+
+    stroke:
+        #334155;
+
+    stroke-width:
+        1;
+
+}
+
+
+.price-line {
+
+    fill:
+        none;
+
+    stroke:
+        #6366f1;
+
+    stroke-width:
+        4;
+
+}
+
+
+.prediction-line {
+
+    fill:
+        none;
+
+    stroke:
+        #ef4444;
+
+    stroke-width:
+        4;
+
+    stroke-dasharray:
+        8 8;
+
+}
+
+
+.current-dot {
+
+    fill:
+        #6366f1;
+
+}
+
+
+.prediction-dot {
+
+    fill:
+        #ef4444;
+
+}
+
+
+/* =========================================================
+   CONTROLS
+========================================================= */
+
+label {
+
+    display:
+        block;
+
+    color:
+        #9ca3af;
+
+    margin-bottom:
+        8px;
+
+    font-size:
+        14px;
+
+}
+
+
+select {
+
+    width:
+        100%;
+
+    padding:
+        13px;
+
+    background:
+        #0d1628;
+
+    color:
+        white;
+
+    border:
+        1px solid #334155;
+
+    border-radius:
+        10px;
+
+    font-size:
+        15px;
+
+}
+
+
+button {
+
+    width:
+        100%;
+
+    padding:
+        15px;
+
+    margin-top:
+        20px;
+
+    border:
+        none;
+
+    border-radius:
+        10px;
+
+    background:
+        #6366f1;
+
+    color:
+        white;
+
+    font-size:
+        16px;
+
+    font-weight:
+        bold;
+
+    cursor:
+        pointer;
+
+}
+
+
+button:hover {
+
+    background:
+        #4f46e5;
+
+}
+
+
+button:disabled {
+
+    opacity:
+        0.6;
+
+    cursor:
+        not-allowed;
+
+}
+
+
+/* =========================================================
+   RESULT
+========================================================= */
+
+.result {
+
+    margin-top:
+        25px;
+
+    padding:
+        20px;
+
+    background:
+        #0d1628;
+
+    border-radius:
+        15px;
+
+    text-align:
+        center;
+
+}
+
+
+.result-title {
+
+    color:
+        #9ca3af;
+
+    font-size:
+        13px;
+
+}
+
+
+.result-price {
+
+    font-size:
+        38px;
+
+    font-weight:
+        bold;
+
+    margin-top:
+        10px;
+
+}
+
+
+.result-change {
+
+    margin-top:
+        10px;
+
+    font-weight:
+        bold;
+
+}
+
+
+/* =========================================================
+   INFORMATION
+========================================================= */
+
+.info {
+
+    margin-top:
+        25px;
+
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap:
+        20px;
+
+}
+
+
+.info-box {
+
+    background:
+        #111a2e;
+
+    border:
+        1px solid #24304a;
+
+    border-radius:
+        18px;
+
+    padding:
+        25px;
+
+}
+
+
+.info-box h3 {
+
+    margin-top:
+        0;
+
+}
+
+
+.info-row {
+
+    display:
+        flex;
+
+    justify-content:
+        space-between;
+
+    padding:
+        12px 0;
+
+    border-bottom:
+        1px solid #24304a;
+
+    font-size:
+        14px;
+
+}
+
+
+.info-label {
+
+    color:
+        #9ca3af;
+
+}
+
+
+footer {
+
+    text-align:
+        center;
+
+    color:
+        #64748b;
+
+    margin-top:
+        35px;
+
+    font-size:
+        12px;
+
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media (max-width: 900px) {
+
+    .cards {
+
+        grid-template-columns:
+            repeat(2, 1fr);
+
+    }
+
+
+    .main {
+
+        grid-template-columns:
+            1fr;
+
+    }
+
+
+    .info {
+
+        grid-template-columns:
+            1fr;
+
+    }
+
+}
+
+
+@media (max-width: 600px) {
+
+    .cards {
+
+        grid-template-columns:
+            1fr;
+
+    }
+
+
+    header h1 {
+
+        font-size:
+            32px;
+
+    }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+<!-- ======================================================
+     HEADER
+====================================================== -->
+
+<header>
+
+    <h1>
+        📈 RNN Stock Predictor
+    </h1>
+
+    <p>
+        Reliance Industries stock prediction using
+        TensorFlow SimpleRNN
+    </p>
+
+    <div class="status">
+        ● Python Model Connected
+    </div>
+
+</header>
+
+
+
+<!-- ======================================================
+     SUMMARY CARDS
+====================================================== -->
+
+<div class="cards">
+
+
+    <div class="card">
+
+        <div class="card-title">
+            STOCK
+        </div>
+
+        <div class="card-value">
+            RELIANCE
+        </div>
+
+        <div class="card-note">
+            NSE · RELIANCE.NS
+        </div>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <div class="card-title">
+            LATEST PRICE
+        </div>
+
+        <div
+            class="card-value"
+            id="latestPrice">
+
+            ₹---
+
+        </div>
+
+        <div class="card-note">
+            Latest downloaded price
+        </div>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <div class="card-title">
+            PREDICTED PRICE
+        </div>
+
+        <div
+            class="card-value"
+            id="predictedPrice">
+
+            ₹---
+
+        </div>
+
+        <div class="card-note">
+            RNN next-step prediction
+        </div>
+
+    </div>
+
+
+
+    <div class="card">
+
+        <div class="card-title">
+            EXPECTED MOVE
+        </div>
+
+        <div
+            class="card-value"
+            id="percentageChange">
+
+            ---
+
+        </div>
+
+        <div class="card-note">
+            Compared with latest price
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<!-- ======================================================
+     MAIN
+====================================================== -->
+
+<div class="main">
+
+
+    <!-- ==================================================
+         CHART
+    =================================================== -->
+
+    <div class="panel">
+
+        <h2>
+            Stock Price Prediction
+        </h2>
+
+
+        <div class="chart">
+
+            <svg
+                viewBox="0 0 800 300">
+
+
+                <!-- Axes -->
+
+                <line
+                    class="axis"
+                    x1="50"
+                    y1="250"
+                    x2="760"
+                    y2="250"
+                />
+
+
+                <line
+                    class="axis"
+                    x1="50"
+                    y1="30"
+                    x2="50"
+                    y2="250"
+                />
+
+
+                <!-- Historical price -->
+
+                <polyline
+                    id="priceLine"
+                    class="price-line"
+                    points="
+                    70,100
+                    130,80
+                    190,120
+                    250,90
+                    310,140
+                    370,110
+                    430,150
+                    490,130
+                    550,170
+                    610,140
+                    670,155
+                    "
+                />
+
+
+                <!-- Prediction -->
+
+                <line
+                    id="predictionLine"
+                    class="prediction-line"
+                    x1="670"
+                    y1="155"
+                    x2="740"
+                    y2="190"
+                />
+
+
+                <!-- Current price -->
+
+                <circle
+                    id="currentDot"
+                    class="current-dot"
+                    cx="670"
+                    cy="155"
+                    r="7"
+                />
+
+
+                <!-- Prediction -->
+
+                <circle
+                    id="predictionDot"
+                    class="prediction-dot"
+                    cx="740"
+                    cy="190"
+                    r="8"
+                />
+
+            </svg>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- ==================================================
+         CONTROLS
+    =================================================== -->
+
+    <div class="panel">
+
+        <h2>
+            Prediction
+        </h2>
+
+
+        <label>
+            Select Stock
+        </label>
+
+
+        <select id="stock">
+
+            <option value="RELIANCE.NS">
+
+                Reliance Industries
+
+            </option>
+
+        </select>
+
+
+        <button
+            id="predictButton"
+            onclick="runPrediction()">
+
+            🔮 Run Prediction
+
+        </button>
+
+
+        <div class="result">
+
+            <div class="result-title">
+
+                PREDICTED NEXT PRICE
+
+            </div>
+
+
+            <div
+                class="result-price"
+                id="resultPrice">
+
+                ₹---
+
+            </div>
+
+
+            <div
+                class="result-change"
+                id="resultChange">
+
+                Click Run Prediction
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<!-- ======================================================
+     MODEL INFORMATION
+====================================================== -->
+
+<div class="info">
+
+
+    <div class="info-box">
+
+        <h3>
+            🤖 Model Information
+        </h3>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Architecture
+            </span>
+
+            <span>
+                SimpleRNN
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Sequence Length
+            </span>
+
+            <span>
+                60 Days
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                RNN Layers
+            </span>
+
+            <span>
+                2
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Optimizer
+            </span>
+
+            <span>
+                Adam
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Epochs
+            </span>
+
+            <span>
+                20
+            </span>
+
+        </div>
+
+    </div>
+
+
+
+    <div class="info-box">
+
+        <h3>
+            ⚙️ Prediction Pipeline
+        </h3>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Data Source
+            </span>
+
+            <span>
+                Yahoo Finance
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Preprocessing
+            </span>
+
+            <span>
+                MinMaxScaler
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Input
+            </span>
+
+            <span>
+                60 × 1
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Model
+            </span>
+
+            <span>
+                stock_rnn.keras
+            </span>
+
+        </div>
+
+
+        <div class="info-row">
+
+            <span class="info-label">
+                Prediction
+            </span>
+
+            <span>
+                Next Close
+            </span>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<footer>
+
+    Educational project —
+    RNN predictions are not financial advice.
+
+</footer>
+
+
+</div>
+
+
+
+<!-- ======================================================
+     JAVASCRIPT
+====================================================== -->
+
+<script>
+
+
+async function runPrediction() {
+
+
+    const button =
+        document.getElementById(
+            "predictButton"
+        );
+
+
+    const latestPrice =
+        document.getElementById(
+            "latestPrice"
+        );
+
+
+    const predictedPrice =
+        document.getElementById(
+            "predictedPrice"
+        );
+
+
+    const percentageChange =
+        document.getElementById(
+            "percentageChange"
+        );
+
+
+    const resultPrice =
+        document.getElementById(
+            "resultPrice"
+        );
+
+
+    const resultChange =
+        document.getElementById(
+            "resultChange"
+        );
+
+
+    // Disable button
+
+    button.disabled = true;
+
+    button.innerHTML =
+        "⏳ Running RNN...";
+
+
+    try {
+
+
+        // Call Python Flask
+
+        const response =
+            await fetch(
+                "/predict"
+            );
+
+
+        const result =
+            await response.json();
+
+
+        // Check result
+
+        if (!result.success) {
+
+            throw new Error(
+                result.error
+            );
+
+        }
+
+
+        const data =
+            result.data;
+
+
+        // ==================================================
+        // UPDATE LATEST PRICE
+        // ==================================================
+
+        latestPrice.innerHTML =
+            "₹" +
+            data.latest_price.toFixed(2);
+
+
+        // ==================================================
+        // UPDATE PREDICTED PRICE
+        // ==================================================
+
+        predictedPrice.innerHTML =
+            "₹" +
+            data.predicted_price.toFixed(2);
+
+
+        resultPrice.innerHTML =
+            "₹" +
+            data.predicted_price.toFixed(2);
+
+
+        // ==================================================
+        // UPDATE PERCENTAGE
+        // ==================================================
+
+        const percentage =
+            data.percentage_change;
+
+
+        percentageChange.innerHTML =
+            (percentage >= 0 ? "+" : "") +
+            percentage.toFixed(2) +
+            "%";
+
+
+        // ==================================================
+        // COLOR
+        // ==================================================
+
+        if (percentage > 0) {
+
+            percentageChange.className =
+                "card-value positive";
+
+        }
+
+        else {
+
+            percentageChange.className =
+                "card-value negative";
+
+        }
+
+
+        // ==================================================
+        // RESULT MESSAGE
+        // ==================================================
+
+        if (data.direction === "UP") {
+
+            resultChange.innerHTML =
+                "📈 +" +
+                Math.abs(
+                    percentage
+                ).toFixed(2) +
+                "% expected increase";
+
+
+            resultChange.className =
+                "result-change positive";
+
+        }
+
+
+        else if (
+            data.direction === "DOWN"
+        ) {
+
+            resultChange.innerHTML =
+                "📉 " +
+                Math.abs(
+                    percentage
+                ).toFixed(2) +
+                "% expected decrease";
+
+
+            resultChange.className =
+                "result-change negative";
+
+        }
+
+
+        else {
+
+            resultChange.innerHTML =
+                "➡️ Price may remain similar";
+
+
+            resultChange.className =
+                "result-change";
+
+        }
+
+
+        // ==================================================
+        // UPDATE CHART
+        // ==================================================
+
+        updateChart(
+            data.latest_price,
+            data.predicted_price
+        );
+
+
+        button.innerHTML =
+            "✅ Prediction Complete";
+
+
+    }
+
+
+    catch (error) {
+
+
+        console.error(error);
+
+
+        resultChange.innerHTML =
+            "❌ " +
+            error.message;
+
+
+        resultChange.className =
+            "result-change negative";
+
+
+        button.innerHTML =
+            "❌ Prediction Failed";
+
+    }
+
+
+    finally {
+
+
+        setTimeout(
+            function() {
+
+                button.disabled =
+                    false;
+
+                button.innerHTML =
+                    "🔮 Run Prediction";
+
+            },
+            2000
+        );
+
+    }
+
+}
+
+
+
+function updateChart(
+    latest,
+    predicted
+) {
+
+
+    /*
+        Simple visualization.
+
+        The chart uses the difference between
+        latest and predicted price to position
+        the prediction point.
+    */
+
+
+    const minPrice =
+        Math.min(
+            latest,
+            predicted
+        ) - 10;
+
+
+    const maxPrice =
+        Math.max(
+            latest,
+            predicted
+        ) + 10;
+
+
+    const currentY =
+        250 -
+        (
+            (
+                latest -
+                minPrice
+            ) /
+            (
+                maxPrice -
+                minPrice
+            )
+        ) *
+        200;
+
+
+    const predictionY =
+        250 -
+        (
+            (
+                predicted -
+                minPrice
+            ) /
+            (
+                maxPrice -
+                minPrice
+            )
+        ) *
+        200;
+
+
+    document
+        .getElementById(
+            "currentDot"
+        )
+        .setAttribute(
+            "cy",
+            currentY
+        );
+
+
+    document
+        .getElementById(
+            "predictionDot"
+        )
+        .setAttribute(
+            "cy",
+            predictionY
+        );
+
+
+    document
+        .getElementById(
+            "predictionLine"
+        )
+        .setAttribute(
+            "y1",
+            currentY
+        );
+
+
+    document
+        .getElementById(
+            "predictionLine"
+        )
+        .setAttribute(
+            "y2",
+            predictionY
+        );
+
+}
+
+
+</script>
+
+
+</body>
+
+</html>
