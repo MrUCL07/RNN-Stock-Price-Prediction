@@ -3,65 +3,77 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import joblib
+import os
 
 from tensorflow.keras.models import load_model
 
-
-# ============================================================
-# FLASK APP
-# ============================================================
-
 app = Flask(__name__)
 
-
-# ============================================================
-# SETTINGS
-# ============================================================
-
 TICKER = "RELIANCE.NS"
-
 SEQUENCE_LENGTH = 60
 
 MODEL_PATH = "models/stock_rnn.keras"
-
 SCALER_PATH = "models/scaler.pkl"
-
-
-# ============================================================
-# LOAD MODEL
-# ============================================================
+LOCAL_DATA_PATH = "data/RELIANCE.csv"
 
 print("\nLoading RNN model...")
-
 model = load_model(MODEL_PATH)
-
 print("RNN model loaded successfully.")
 
-
-# ============================================================
-# LOAD SCALER
-# ============================================================
-
 print("\nLoading scaler...")
-
 scaler = joblib.load(SCALER_PATH)
-
 print("Scaler loaded successfully.")
 
 
-# ============================================================
-# HOME PAGE
-# ============================================================
-
 @app.route("/")
 def home():
-
     return render_template("index.html")
 
 
-# ============================================================
-# STOCK PREDICTION
-# ============================================================
+def get_stock_data():
+    """
+    Try Yahoo Finance first.
+    If Yahoo Finance is unavailable or rate-limited,
+    use the locally saved CSV file.
+    """
+
+    print("\nTrying Yahoo Finance...")
+
+    try:
+        data = yf.download(
+            TICKER,
+            period="6mo",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            timeout=10
+        )
+
+        if not data.empty:
+            print("Yahoo Finance data downloaded successfully.")
+            return data
+
+        print("Yahoo Finance returned empty data.")
+
+    except Exception as e:
+        print("Yahoo Finance error:", str(e))
+
+    print("\nUsing local CSV data instead...")
+
+    if not os.path.exists(LOCAL_DATA_PATH):
+        raise FileNotFoundError(
+            "Local stock data file was not found."
+        )
+
+    data = pd.read_csv(
+        LOCAL_DATA_PATH,
+        skiprows=[1, 2]
+    )
+
+    print("Local CSV loaded successfully.")
+
+    return data
+
 
 @app.route("/predict")
 def predict():
@@ -69,104 +81,68 @@ def predict():
     try:
 
         print("\n======================================")
-        print("Downloading latest stock data...")
+        print("Starting stock prediction...")
         print("======================================")
 
+        # --------------------------------
+        # 1. Get stock data
+        # --------------------------------
 
-        # ----------------------------------------------------
-        # Download latest data
-        # ----------------------------------------------------
-
-        data = yf.download(
-            TICKER,
-            period="6mo",
-            interval="1d",
-            auto_adjust=True,
-            progress=False
-        )
-
+        data = get_stock_data()
 
         if data.empty:
-
             return jsonify({
                 "success": False,
-                "error": "Could not download stock data."
-            })
+                "error": "No stock data available."
+            }), 500
 
-
-        # ----------------------------------------------------
-        # Get closing price
-        # ----------------------------------------------------
+        # --------------------------------
+        # 2. Extract Close price
+        # --------------------------------
 
         prices = data["Close"]
 
-
-        # Handle yfinance DataFrame format
         if isinstance(prices, pd.DataFrame):
-
             prices = prices.iloc[:, 0]
-
 
         prices = pd.to_numeric(
             prices,
             errors="coerce"
         )
 
-
         prices = prices.dropna()
 
-
-        # Convert to NumPy
         prices = prices.values.reshape(-1, 1)
 
-
-        # ----------------------------------------------------
-        # Check data
-        # ----------------------------------------------------
-
         if len(prices) < SEQUENCE_LENGTH:
-
             return jsonify({
                 "success": False,
-                "error": "Not enough stock data."
-            })
+                "error": "Not enough stock data for prediction."
+            }), 500
 
+        # --------------------------------
+        # 3. Latest price
+        # --------------------------------
 
-        # ----------------------------------------------------
-        # Latest price
-        # ----------------------------------------------------
-
-        latest_price = float(
-            prices[-1][0]
-        )
-
+        latest_price = float(prices[-1][0])
 
         print(
             f"Latest price: ₹{latest_price:.2f}"
         )
 
+        # --------------------------------
+        # 4. Scale using training scaler
+        # --------------------------------
 
-        # ----------------------------------------------------
-        # Scale data
-        # ----------------------------------------------------
+        scaled_prices = scaler.transform(prices)
 
-        scaled_prices = scaler.transform(
-            prices
-        )
-
-
-        # ----------------------------------------------------
-        # Get last 60 trading days
-        # ----------------------------------------------------
+        # --------------------------------
+        # 5. Last 60 days
+        # --------------------------------
 
         last_60_days = scaled_prices[
             -SEQUENCE_LENGTH:
         ]
-
-
-        # ----------------------------------------------------
-        # Reshape for RNN
-        # ----------------------------------------------------
 
         X = last_60_days.reshape(
             1,
@@ -174,156 +150,115 @@ def predict():
             1
         )
 
+        # --------------------------------
+        # 6. RNN prediction
+        # --------------------------------
 
-        # ----------------------------------------------------
-        # Make prediction
-        # ----------------------------------------------------
+        print("Running RNN prediction...")
 
         prediction = model.predict(
             X,
             verbose=0
         )
 
-
-        # ----------------------------------------------------
-        # Convert prediction back to ₹
-        # ----------------------------------------------------
+        # --------------------------------
+        # 7. Convert back to price
+        # --------------------------------
 
         predicted_price = scaler.inverse_transform(
             prediction
         )
 
-
         predicted_price = float(
             predicted_price[0][0]
         )
-
 
         print(
             f"Predicted price: ₹{predicted_price:.2f}"
         )
 
-
-        # ----------------------------------------------------
-        # Calculate change
-        # ----------------------------------------------------
+        # --------------------------------
+        # 8. Calculate movement
+        # --------------------------------
 
         price_difference = (
-            predicted_price -
-            latest_price
+            predicted_price - latest_price
         )
 
-
         percentage_change = (
-            price_difference /
-            latest_price
+            price_difference / latest_price
         ) * 100
 
-
-        # ----------------------------------------------------
-        # Determine direction
-        # ----------------------------------------------------
-
         if percentage_change > 0.1:
-
             direction = "UP"
 
         elif percentage_change < -0.1:
-
             direction = "DOWN"
 
         else:
-
             direction = "SAME"
 
-
         print(
-            f"Expected change: {percentage_change:.2f}%"
+            f"Expected change: "
+            f"{percentage_change:.2f}%"
         )
 
-
-        # ----------------------------------------------------
-        # Send result to browser
-        # ----------------------------------------------------
+        # --------------------------------
+        # 9. Return JSON
+        # --------------------------------
 
         return jsonify({
-
             "success": True,
-
             "data": {
-
                 "ticker": TICKER,
-
                 "latest_price": round(
                     latest_price,
                     2
                 ),
-
                 "predicted_price": round(
                     predicted_price,
                     2
                 ),
-
                 "price_difference": round(
                     price_difference,
                     2
                 ),
-
                 "percentage_change": round(
                     percentage_change,
                     2
                 ),
-
                 "direction": direction
-
             }
-
         })
-
 
     except Exception as e:
 
-        print("\nERROR:")
+        print("\nPREDICTION ERROR:")
         print(str(e))
 
-
         return jsonify({
-
             "success": False,
-
             "error": str(e)
+        }), 500
 
-        })
-
-
-# ============================================================
-# START APPLICATION
-# ============================================================
 
 if __name__ == "__main__":
 
-    print("\n")
-    print("==============================================")
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
+    print("\n==============================================")
     print("       RNN STOCK PREDICTION WEB APP")
     print("==============================================")
 
     print("\nStarting Flask server...")
 
-    print(
-        "\nOpen this in your browser:"
-    )
-
-    print(
-        "http://127.0.0.1:5000"
-    )
-
-
     app.run(
-
-        host="127.0.0.1",
-
-        port=5000,
-
+        host="0.0.0.0",
+        port=port,
         debug=False
-
     )
